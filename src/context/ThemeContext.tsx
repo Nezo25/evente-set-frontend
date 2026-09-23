@@ -35,14 +35,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Previne hidratação incorreta
-  if (!mounted) {
-    return <>{children}</>;
-  }
-
   return (
     <ThemeContext.Provider value={{ theme, setTheme: changeTheme }}>
-      {children}
+      <div style={{ visibility: mounted ? 'visible' : 'hidden' }}>
+        {children}
+      </div>
     </ThemeContext.Provider>
   );
 }
