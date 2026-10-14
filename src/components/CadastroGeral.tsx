@@ -207,8 +207,19 @@ export default function CadastroGeral() {
         setEditingItem(null);
         showSuccess('Item salvo!');
         setViewMode('list');
-      } else throw new Error(await res.text());
-    } catch (err: unknown) { showError('Erro ao salvar item'); }
+      } else {
+        const errorText = await res.text();
+        try {
+          const errObj = JSON.parse(errorText);
+          throw new Error(errObj.message || errorText);
+        } catch {
+          throw new Error(errorText || 'Erro ao salvar item');
+        }
+      }
+    } catch (err: unknown) { 
+      const error = err as Error;
+      showError(error.message || 'Erro ao salvar item'); 
+    }
   };
 
   const handleSaveCardapio = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -238,8 +249,19 @@ export default function CadastroGeral() {
         setEditingCardapio(null);
         showSuccess('Cardápio salvo!');
         setViewMode('list');
-      } else throw new Error(await res.text());
-    } catch (err: unknown) { showError('Erro ao salvar cardápio'); }
+      } else {
+        const errorText = await res.text();
+        try {
+          const errObj = JSON.parse(errorText);
+          throw new Error(errObj.message || errorText);
+        } catch {
+          throw new Error(errorText || 'Erro ao salvar cardápio');
+        }
+      }
+    } catch (err: unknown) { 
+      const error = err as Error;
+      showError(error.message || 'Erro ao salvar cardápio'); 
+    }
   };
 
   const handleSaveMesa = async (e: React.FormEvent<HTMLFormElement>) => {
