@@ -31,53 +31,60 @@ export default function CadastroGeral() {
   
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
 
   // Busca Eventos e itens base
   useEffect(() => {
     fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/eventos`)
       .then(res => res.json())
       .then(data => {
-        setEventos(data);
+        if (Array.isArray(data)) {
+          setEventos(data);
+          if (data.length > 0 && (!eventoSelecionadoId || !data.some((ev: Evento) => String(ev.id) === String(eventoSelecionadoId)))) {
+            setEventoSelecionadoId(String(data[0].id));
+          }
+        }
       }).catch(err => console.error(err));
 
     fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/cardapio/itens`)
       .then(res => res.json())
-      .then(data => setItensCardapioBase(data))
+      .then(data => { if (Array.isArray(data)) setItensCardapioBase(data); })
       .catch(err => console.error(err));
   }, []);
 
   // Busca entidades associadas quando evento selecionado muda
   useEffect(() => {
-    if (!eventoSelecionadoId) return;
+    const targetId = eventoSelecionadoId || (eventos[0]?.id ? String(eventos[0].id) : "");
+    if (!targetId) return;
     
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/eventos/${eventoSelecionadoId}/mesas`)
-      .then(res => res.json()).then(data => setMesas(data)).catch(err => console.error(err));
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/eventos/${targetId}/mesas`)
+      .then(res => res.json()).then(data => { if (Array.isArray(data)) setMesas(data); }).catch(err => console.error(err));
 
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/eventos/${eventoSelecionadoId}/convidados`)
-      .then(res => res.json()).then(data => setConvidados(data)).catch(err => console.error(err));
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/eventos/${targetId}/convidados`)
+      .then(res => res.json()).then(data => { if (Array.isArray(data)) setConvidados(data); }).catch(err => console.error(err));
 
     Promise.all([
       fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/cardapio/pre-definidos`).then(r => r.json()),
-      fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/cardapio/evento/${eventoSelecionadoId}`).then(r => r.json())
+      fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/cardapio/evento/${targetId}`).then(r => r.json())
     ]).then(([preDefs, custom]) => {
-      setCardapios([...preDefs, ...custom]);
+      setCardapios([...(Array.isArray(preDefs) ? preDefs : []), ...(Array.isArray(custom) ? custom : [])]);
     }).catch(err => console.error(err));
 
-  }, [eventoSelecionadoId, activeSection]);
+  }, [eventoSelecionadoId, eventos, activeSection]);
 
 
   useEffect(() => {
     if (viewMode === 'form' && activeSection === 'eventos') {
       fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/cardapio/pre-definidos?tipoEvento=${tipoEventoSelecionado}`)
         .then(res => res.json())
-        .then(data => setCardapiosPreDefinidosFiltrados(data))
+        .then(data => { if (Array.isArray(data)) setCardapiosPreDefinidosFiltrados(data); })
         .catch(err => console.error(err));
     }
   }, [tipoEventoSelecionado, viewMode, activeSection]);
 
-  const showSuccess = (msg: string) => { setErrorMessage(null); setSuccessMessage(msg); setTimeout(() => setSuccessMessage(null), 3000); };
+  const showSuccess = (msg: string) => { setErrorMessage(null); setSuccessMessage(msg); setTimeout(() => setSuccessMessage(null), 5000); };
 
-  const showError = (msg: string) => { setSuccessMessage(null); setErrorMessage(msg); setTimeout(() => setErrorMessage(null), 3000); };
+  const showError = (msg: string) => { setSuccessMessage(null); setErrorMessage(msg); setTimeout(() => setErrorMessage(null), 6000); };
 
   const handleNavClick = (section: 'eventos' | 'acomodacoes' | 'convidados' | 'cardapios' | 'itens') => {
     setActiveSection(section);
@@ -87,6 +94,7 @@ export default function CadastroGeral() {
   // ================= SAVE HANDLERS =================
   const handleSaveEvento = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setIsSaving(true);
     const formData = new FormData(e.currentTarget);
     const body = {
       nomeCliente: formData.get('nomeCliente'),
@@ -110,9 +118,7 @@ export default function CadastroGeral() {
       if (res.ok) {
         const novoEvento = await res.json();
         
-        // Se escolheu cardápio modelo ao criar novo evento, associa-o (clonando ou associando no backend, no momento o backend apenas tem POST /api/cardapio/evento/...)
         if (!editingEvento && cardapioId) {
-            // Buscar o cardapio selecionado para clonar os itens
             const cardapioModelo = cardapiosPreDefinidosFiltrados.find(c => c.id === Number(cardapioId));
             if (cardapioModelo) {
                 await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/cardapio/evento/${novoEvento.id}`, {
@@ -137,7 +143,9 @@ export default function CadastroGeral() {
       } else throw new Error(await res.text());
     } catch (err: unknown) { 
       const error = err as Error;
-      showError(error.message || 'Erro ao conectar'); 
+      showError(error.message || 'Erro ao conectar com o servidor'); 
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -188,6 +196,7 @@ export default function CadastroGeral() {
 
   const handleSaveItem = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setIsSaving(true);
     const formData = new FormData(e.currentTarget);
     const body = {
       nome: formData.get('nome'),
@@ -205,7 +214,7 @@ export default function CadastroGeral() {
         if (editingItem) setItensCardapioBase(prev => prev.map(i => i.id === novoItem.id ? novoItem : i));
         else setItensCardapioBase(prev => [...prev, novoItem]);
         setEditingItem(null);
-        showSuccess('Item salvo!');
+        showSuccess('Prato / Item salvo com sucesso!');
         setViewMode('list');
       } else {
         const errorText = await res.text();
@@ -219,12 +228,16 @@ export default function CadastroGeral() {
     } catch (err: unknown) { 
       const error = err as Error;
       showError(error.message || 'Erro ao salvar item'); 
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleSaveCardapio = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!eventoSelecionadoId) return;
+    const targetEventoId = eventoSelecionadoId || (eventos[0]?.id ? String(eventos[0].id) : "");
+    if (!targetEventoId) return showError("Selecione ou cadastre um evento primeiro!");
+    setIsSaving(true);
     
     const formData = new FormData(e.currentTarget);
     const itemIds = Array.from(formData.getAll('itens')).map(id => ({ id: Number(id) }));
@@ -238,7 +251,7 @@ export default function CadastroGeral() {
     };
 
     try {
-      const url = editingCardapio ? `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/cardapio/${editingCardapio.id}` : `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/cardapio${preDefinido ? '' : `/evento/${eventoSelecionadoId}`}`;
+      const url = editingCardapio ? `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/cardapio/${editingCardapio.id}` : `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/cardapio${preDefinido ? '' : `/evento/${targetEventoId}`}`;
       const method = editingCardapio ? 'PUT' : 'POST';
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       
@@ -247,7 +260,7 @@ export default function CadastroGeral() {
         if (editingCardapio) setCardapios(prev => prev.map(c => c.id === novoCardapio.id ? novoCardapio : c));
         else setCardapios(prev => [...prev, novoCardapio]);
         setEditingCardapio(null);
-        showSuccess('Cardápio salvo!');
+        showSuccess('Cardápio salvo com sucesso!');
         setViewMode('list');
       } else {
         const errorText = await res.text();
@@ -261,16 +274,20 @@ export default function CadastroGeral() {
     } catch (err: unknown) { 
       const error = err as Error;
       showError(error.message || 'Erro ao salvar cardápio'); 
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleSaveMesa = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!eventoSelecionadoId) return showError("Selecione um evento!");
+    const targetEventoId = eventoSelecionadoId || (eventos[0]?.id ? String(eventos[0].id) : "");
+    if (!targetEventoId) return showError("Selecione um evento!");
+    setIsSaving(true);
     const formData = new FormData(e.currentTarget);
     
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/eventos/${eventoSelecionadoId}/mesas`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/eventos/${targetEventoId}/mesas`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identificador: formData.get('identificador'), capacidadeMaxima: Number(formData.get('capacidadeMaxima')) })
       });
@@ -282,29 +299,35 @@ export default function CadastroGeral() {
       } else throw new Error(await res.text());
     } catch (err: unknown) { 
       const error = err as Error;
-      showError(error.message || 'Erro'); 
+      showError(error.message || 'Erro ao salvar acomodação'); 
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleSaveConvidado = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!eventoSelecionadoId) return showError("Selecione um evento!");
+    const targetEventoId = eventoSelecionadoId || (eventos[0]?.id ? String(eventos[0].id) : "");
+    if (!targetEventoId) return showError("Selecione um evento!");
+    setIsSaving(true);
     const formData = new FormData(e.currentTarget);
     const cardapioId = formData.get('cardapioId');
     const tag = formData.get('tag') as string;
     const grupoFamilia = formData.get('grupoFamilia') as string;
     const restricoesAlimentares = formData.get('restricoesAlimentares') as string;
     
-    // Suporte para múltiplos nomes separados por linha ou vírgula
     const nomesRaw = formData.get('nomes') as string;
     const nomes = nomesRaw.split(/[\n,]+/).map(n => n.trim()).filter(n => n.length > 0);
 
-    if (nomes.length === 0) return showError("Insira pelo menos um nome!");
+    if (nomes.length === 0) {
+      setIsSaving(false);
+      return showError("Insira pelo menos um nome!");
+    }
 
     try {
       const novosConvidados: Convidado[] = [];
       for (const nome of nomes) {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/eventos/${eventoSelecionadoId}/convidados`, {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/eventos/${targetEventoId}/convidados`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             nome, 
@@ -318,7 +341,7 @@ export default function CadastroGeral() {
         if (res.ok) {
           let novoConv = await res.json();
           if (cardapioId) {
-            const resVinculo = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/eventos/${eventoSelecionadoId}/convidados/${novoConv.id}/cardapio?cardapioId=${cardapioId}`, { method: 'PUT' });
+            const resVinculo = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/eventos/${targetEventoId}/convidados/${novoConv.id}/cardapio?cardapioId=${cardapioId}`, { method: 'PUT' });
             if (resVinculo.ok) novoConv = await resVinculo.json();
           }
           novosConvidados.push(novoConv);
@@ -333,6 +356,8 @@ export default function CadastroGeral() {
     } catch (err: unknown) { 
       const error = err as Error;
       showError(error.message || 'Erro ao cadastrar convidados'); 
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -361,15 +386,23 @@ export default function CadastroGeral() {
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative bg-transparent p-4 md:p-8">
         
-        {/* TOASTS */}
+        {/* TOASTS FLUTUANTES FIXOS */}
+        {isSaving && (
+          <div className="fixed top-20 right-6 bg-blue-600 text-white px-5 py-3.5 rounded-xl shadow-2xl z-[9999] flex items-center gap-3 text-sm md:text-base border border-blue-400">
+            <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"></span>
+            <span className="font-bold">Salvando dados no servidor...</span>
+          </div>
+        )}
         {successMessage && (
-          <div className="absolute top-4 right-4 md:right-8 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded shadow-lg z-50 flex items-center gap-2 animate-bounce text-sm md:text-base">
-            <span className="font-bold">✓ {successMessage}</span>
+          <div className="fixed top-20 right-6 bg-green-600 text-white px-5 py-3.5 rounded-xl shadow-2xl z-[9999] flex items-center gap-3 text-sm md:text-base border border-green-400">
+            <span className="font-bold">✅ {successMessage}</span>
+            <button onClick={() => setSuccessMessage(null)} className="ml-2 text-white/80 hover:text-white font-bold">✕</button>
           </div>
         )}
         {errorMessage && (
-          <div className="absolute top-4 right-4 md:right-8 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-lg z-50 flex items-center gap-2 text-sm md:text-base">
-            <span className="font-bold">⚠ {errorMessage}</span>
+          <div className="fixed top-20 right-6 bg-red-600 text-white px-5 py-3.5 rounded-xl shadow-2xl z-[9999] flex items-center gap-3 text-sm md:text-base border border-red-400 max-w-md">
+            <span className="font-bold">⚠️ {errorMessage}</span>
+            <button onClick={() => setErrorMessage(null)} className="ml-2 text-white/80 hover:text-white font-bold">✕</button>
           </div>
         )}
 
@@ -384,7 +417,7 @@ export default function CadastroGeral() {
                 <span className="text-sm text-gray-500 hidden md:inline">Filtrando Evento:</span>
                 <select 
                   className="w-full md:w-auto text-sm border-gray-300 rounded border py-1.5 px-3 focus:ring-blue-500 font-semibold text-gray-700 bg-gray-50"
-                  value={eventoSelecionadoId} 
+                  value={eventoSelecionadoId || (eventos[0]?.id ? String(eventos[0].id) : "")} 
                   onChange={(e) => { setEventoSelecionadoId(e.target.value); setViewMode('list'); }}
                 >
                   {eventos.map(ev => <option key={ev.id} value={ev.id}>{ev.nomeCliente}</option>)}
@@ -396,7 +429,7 @@ export default function CadastroGeral() {
           
           <div className="w-full md:w-auto flex justify-end">
             {viewMode === 'list' ? (
-              (activeSection === 'eventos' || activeSection === 'itens' || (eventos.length > 0 && eventoSelecionadoId)) && (
+              (activeSection === 'eventos' || activeSection === 'itens' || eventos.length > 0) && (
                 <button onClick={() => setViewMode('form')} className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-lg transition-all shadow-md flex justify-center items-center gap-2">
                   <span>
                     {activeSection === 'eventos' && '+ Novo Evento'}
